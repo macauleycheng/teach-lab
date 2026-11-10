@@ -1,0 +1,6 @@
+[submodule "frr-bgp-route-policy-lab"]
+	path = frr-bgp-route-policy-lab
+	url = https://github.com/macauleycheng/frr-bgp-route-policy-lab.git
+[submodule "FRR_EVPN_Lab"]
+	path = FRR_EVPN_Lab
+	url = https://github.com/macauleycheng/frr-evpn-lab.git
