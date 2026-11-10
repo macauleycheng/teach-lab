@@ -1,46 +1,46 @@
-# SONiC Broadcom Image Build 教學文件
+# SONiC Broadcom Image Build 教学文档
 
-> 對象：新進研發人員  
-> 目的：提供一套正式、可依循的 SONiC（Broadcom 平台）build 教學，取代「每個人自己去啃 README」的學習方式。  
-> 範圍：本文聚焦於 **Broadcom 平台**的 image build，特別是 **Broadcom 專屬 debian 套件（受 NDA 保護的 SAI/SDK）的取得與替換流程**，以及 **SONiC 整體架構**的教育說明。
+> 对象：新进研发人员  
+> 目的：提供一套正式、可依循的 SONiC（Broadcom 平台）build 教学，取代「每个人自己去啃 README」的学习方式。  
+> 范围：本文聚焦于 **Broadcom 平台**的 image build，特别是 **Broadcom 专属 debian 套件（受 NDA 保护的 SAI/SDK）的取得与替换流程**，以及 **SONiC 整体架构**的教育说明。
 
 ---
 
-## 目錄
+## 目录
 
-1. [文件使用方式](#1-文件使用方式)
-2. [SONiC 架構總覽](#2-sonic-架構總覽)
-3. [sonic-buildimage build 系統架構](#3-sonic-buildimage-build-系統架構)
-4. [Broadcom 平台的套件組成](#4-broadcom-平台的套件組成)
-5. [Broadcom debian 的取得（NDA 議題）](#5-broadcom-debian-的取得nda-議題)
-6. [替換 Broadcom debian 來 build 不同 image](#6-替換-broadcom-debian-來-build-不同-image)
-7. [客戶二次開發 debian 的整合流程](#7-客戶二次開發-debian-的整合流程)
+1. [文档使用方式](#1-文档使用方式)
+2. [SONiC 架构总览](#2-sonic-架构总览)
+3. [sonic-buildimage build 系统架构](#3-sonic-buildimage-build-系统架构)
+4. [Broadcom 平台的套件组成](#4-broadcom-平台的套件组成)
+5. [Broadcom debian 的取得（NDA 议题）](#5-broadcom-debian-的取得nda-议题)
+6. [替换 Broadcom debian 来 build 不同 image](#6-替换-broadcom-debian-来-build-不同-image)
+7. [客户二次开发 debian 的集成流程](#7-客户二次开发-debian-的集成流程)
 8. [完整 build 操作流程](#8-完整-build-操作流程)
-9. [常見問題排查](#9-常見問題排查)
-10. [新進人員學習路徑](#10-新進人員學習路徑)
+9. [常见问题排查](#9-常见问题排查)
+10. [新进人员学习路径](#10-新进人员学习路径)
 
 ---
 
-## 1. 文件使用方式
+## 1. 文档使用方式
 
-本文與專案內既有文件互補，並非取代。既有文件的角色：
+本文与项目内既有文档互补，并非取代。既有文档的角色：
 
-| 文件 | 角色 |
+| 文档 | 角色 |
 |------|------|
-| `README.md` | 原始官方指引，硬體需求、環境準備、build 指令 |
-| `README.buildsystem.md` | build 系統（make backend/frontend、target group）的權威說明 |
-| `BUILD_CONFIG.md` | build 可調整的設定旗標 |
-| **本文 `docs/sonic-broadcom-build-onboarding.md`** | **新進人員正式流程 + Broadcom debian 取得/替換的 how-to** |
+| `README.md` | 原始官方指引，硬件需求、环境准备、build 指令 |
+| `README.buildsystem.md` | build 系统（make backend/frontend、target group）的权威说明 |
+| `BUILD_CONFIG.md` | build 可调整的配置旗标 |
+| **本文 `docs/sonic-broadcom-build-onboarding.md`** | **新进人员正式流程 + Broadcom debian 取得/替换的 how-to** |
 
-閱讀建議：先讀第 2、3 章建立心智模型，再依任務跳到第 5～8 章實作。
+阅读建议：先读第 2、3 章创建心智模型，再依任务跳到第 5～8 章实作。
 
 ---
 
-## 2. SONiC 架構總覽
+## 2. SONiC 架构总览
 
-SONiC（Software for Open Networking in the Cloud）是一套以 **Linux（Debian）+ Docker 容器**為基礎的交換器網路作業系統。核心設計理念是：**將交換器功能拆成多個獨立的 Docker 容器，透過中央資料庫（Redis）交換狀態**。
+SONiC（Software for Open Networking in the Cloud）是一套以 **Linux（Debian）+ Docker 容器**为基础的交换器网络操作系统。内核设计理念是：**将交换器功能拆成多个独立的 Docker 容器，通过中央数据库（Redis）交换状态**。
 
-### 2.1 執行期架構（交換器上運作的樣子）
+### 2.1 运行期架构（交换器上运作的样子）
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -52,94 +52,94 @@ SONiC（Software for Open Networking in the Cloud）是一套以 **Linux（Debia
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘   │
 │       │             │             │               │           │
 │       └─────────────┴─────────────┴───────────────┘           │
-│                 透過 Redis(APPL/ASIC_DB) 溝通                  │
+│                 通过 Redis(APPL/ASIC_DB) 沟通                  │
 │                                   │                           │
 │                          ┌────────▼─────────┐                 │
-│                          │   SAI (廠商庫)    │  ← Broadcom     │
-│                          │   libsaibcm      │     專屬 debian  │
+│                          │   SAI (厂商库)    │  ← Broadcom     │
+│                          │   libsaibcm      │     专属 debian  │
 │                          └────────┬─────────┘                 │
 └───────────────────────────────────┼───────────────────────────┘
-                                     │ (核心模組 linux_bcm_knet 等)
+                                     │ (内核模块 linux_bcm_knet 等)
                               ┌──────▼───────┐
-                              │  ASIC 晶片    │
+                              │  ASIC 芯片    │
                               │ (Broadcom)   │
                               └──────────────┘
 ```
 
-### 2.2 關鍵容器與角色
+### 2.2 关键容器与角色
 
 | 容器 | 角色 |
 |------|------|
-| `database` | Redis，所有狀態的中央儲存（CONFIG_DB / APPL_DB / ASIC_DB / STATE_DB …） |
-| `swss` | Switch State Service，各種 orchagent（路由、ACL、port 等）將設定寫入 ASIC_DB |
-| `syncd` | 讀取 ASIC_DB，透過 **SAI** 下發到 ASIC。**這是 Broadcom SAI debian 被安裝的容器** |
+| `database` | Redis，所有状态的中央保存（CONFIG_DB / APPL_DB / ASIC_DB / STATE_DB …） |
+| `swss` | Switch State Service，各种 orchagent（路由、ACL、port 等）将配置写入 ASIC_DB |
+| `syncd` | 读取 ASIC_DB，通过 **SAI** 下发到 ASIC。**这是 Broadcom SAI debian 被安装的容器** |
 | `bgp` | FRR routing stack |
-| `teamd` / `lldp` / `snmp` / `pmon` 等 | 各功能性服務 |
+| `teamd` / `lldp` / `snmp` / `pmon` 等 | 各功能性服务 |
 
-### 2.3 SAI 的關鍵地位
+### 2.3 SAI 的关键地位
 
-**SAI（Switch Abstraction Interface）** 是 SONiC 能夠支援多廠商 ASIC 的關鍵。它是一層標準化 API：
+**SAI（Switch Abstraction Interface）** 是 SONiC 能够支持多厂商 ASIC 的关键。它是一层标准化 API：
 
-- 上層（syncd）只呼叫 SAI 標準 API，不管底下是哪家晶片。
-- 下層由各 ASIC 廠商提供 SAI 實作（`.deb` 套件）對接自家 SDK/晶片。
+- 上层（syncd）只调用 SAI 标准 API，不管底下是哪家芯片。
+- 下层由各 ASIC 厂商提供 SAI 实作（`.deb` 套件）对接自家 SDK/芯片。
 
-對 Broadcom 而言，SAI 實作就是 **`libsaibcm`**（以及開發用的 `libsaibcm-dev`）。這個套件由 Broadcom 提供、受 NDA 保護，正是本文第 5～7 章的主角。
+对 Broadcom 而言，SAI 实作就是 **`libsaibcm`**（以及开发用的 `libsaibcm-dev`）。这个套件由 Broadcom 提供、受 NDA 保护，正是本文第 5～7 章的主角。
 
 ---
 
-## 3. sonic-buildimage build 系統架構
+## 3. sonic-buildimage build 系统架构
 
-（權威細節見 `README.buildsystem.md`，此處為新進人員導讀）
+（权威细节见 `README.buildsystem.md`，此处为新进人员导读）
 
-### 3.1 兩層結構
+### 3.1 两层结构
 
-- **Backend（後端）**：`Makefile`、`slave.mk`、`sonic-slave-*/Dockerfile`。
-  - 所有 build 都在一個叫 `sonic-slave` 的 Docker 容器內執行，環境一致。
-  - `slave.mk` 定義了各種「target group」的通用建置規則。
-- **Frontend（前端）**：`rules/`（平台無關 recipe）與 `platform/[VENDOR]/`（廠商專屬 recipe）。
-  - 每個 recipe 是一個小的 `.mk`，描述「要 build 什麼、相依什麼、怎麼取得」。
+- **Backend（后端）**：`Makefile`、`slave.mk`、`sonic-slave-*/Dockerfile`。
+  - 所有 build 都在一个叫 `sonic-slave` 的 Docker 容器内运行，环境一致。
+  - `slave.mk` 定义了各种「target group」的通用建置规则。
+- **Frontend（前端）**：`rules/`（平台无关 recipe）与 `platform/[VENDOR]/`（厂商专属 recipe）。
+  - 每个 recipe 是一个小的 `.mk`，描述「要 build 什幺、相依什幺、怎幺取得」。
 
-### 3.2 build 產物流向
+### 3.2 build 产物流向
 
 ```
-src/ + platform/      target/debs/        最終 image
-(原始碼/recipe)  ──►  (.deb 套件)   ──►   target/sonic-broadcom.bin
+src/ + platform/      target/debs/        最终 image
+(原代码/recipe)  ──►  (.deb 套件)   ──►   target/sonic-broadcom.bin
                                           │
-                                          └─ 安裝進各 docker → 打包成 ONIE installer
+                                          └─ 安装进各 docker → 打包成 ONIE installer
 ```
 
-### 3.3 必懂的 target group（取得套件的四種方式）
+### 3.3 必懂的 target group（取得套件的四种方式）
 
-這是理解「Broadcom debian 怎麼進來」的關鍵。來源見 `README.buildsystem.md`，內容為求教學已改寫：
+这是理解「Broadcom debian 怎幺进来」的关键。来源见 `README.buildsystem.md`，内容为求教学已改写：
 
-| Target group | 意義 | 使用時機 |
+| Target group | 意义 | 使用时机 |
 |--------------|------|----------|
-| `SONIC_DPKG_DEBS` | 從原始碼用 `dpkg-buildpackage` 建置 | 自家開源套件 |
-| `SONIC_MAKE_DEBS` | 用自訂 Makefile 建置（可套 patch） | 需要特殊建置流程 |
-| `SONIC_ONLINE_DEBS` | 從網路 URL 下載現成 `.deb` | **預設的 Broadcom SAI 取得方式** |
-| `SONIC_COPY_DEBS` | 從本機指定路徑複製現成 `.deb` | **替換成本地 Broadcom/客製 debian** |
+| `SONIC_DPKG_DEBS` | 从原代码用 `dpkg-buildpackage` 建置 | 自家开源套件 |
+| `SONIC_MAKE_DEBS` | 用自订 Makefile 建置（可套 patch） | 需要特殊建置流程 |
+| `SONIC_ONLINE_DEBS` | 从网络 URL 下载现成 `.deb` | **缺省的 Broadcom SAI 取得方式** |
+| `SONIC_COPY_DEBS` | 从本机指定路径拷贝现成 `.deb` | **替换成本地 Broadcom/客制 debian** |
 
-> 關鍵認知：Broadcom SAI 預設走 `SONIC_ONLINE_DEBS`（線上下載）。要替換成你自己拿到或二次開發的 debian，核心手法就是改走 `SONIC_COPY_DEBS`（本地複製）。
+> 关键认知：Broadcom SAI 缺省走 `SONIC_ONLINE_DEBS`（在线下载）。要替换成你自己拿到或二次开发的 debian，内核手法就是改走 `SONIC_COPY_DEBS`（本地拷贝）。
 
-build 系統對這兩者的實際處理（摘自 `slave.mk`）：
+build 系统对这两者的实际处理（摘自 `slave.mk`）：
 
-- `SONIC_ONLINE_DEBS`：對每個套件執行 `curl -L -f -o <目標> <URL>` 下載，並寫入 DPKG cache。
-- `SONIC_COPY_DEBS`：直接從 `$(套件)_PATH` 指定的本機路徑複製到 `target/debs/`。
+- `SONIC_ONLINE_DEBS`：对每个套件运行 `curl -L -f -o <目标> <URL>` 下载，并写入 DPKG cache。
+- `SONIC_COPY_DEBS`：直接从 `$(套件)_PATH` 指定的本机路径拷贝到 `target/debs/`。
 
 ---
 
-## 4. Broadcom 平台的套件組成
+## 4. Broadcom 平台的套件组成
 
-Broadcom 平台 recipe 都在 `platform/broadcom/`。`platform/broadcom/rules.mk` 是入口，會 `include` 以下與 SAI 相關的檔案：
+Broadcom 平台 recipe 都在 `platform/broadcom/`。`platform/broadcom/rules.mk` 是入口，会 `include` 以下与 SAI 相关的文档：
 
-| 檔案 | 內容 | 對應 ASIC 家族 |
+| 文档 | 内容 | 对应 ASIC 家族 |
 |------|------|----------------|
 | `sai-xgs.mk` | `libsaibcm`（XGS：Tomahawk/Trident 等） | XGS 系列 |
 | `sai-dnx.mk` | `libsaibcm_dnx`（DNX：Jericho/Qumran 等） | DNX 系列 |
-| `sai-legacy-th.mk` | 舊版 Tomahawk 相容 SAI | Legacy TH |
-| `sai-modules.mk` | SAI 核心驅動模組（`saibcm-modules`） | 通用 |
+| `sai-legacy-th.mk` | 旧版 Tomahawk 兼容 SAI | Legacy TH |
+| `sai-modules.mk` | SAI 内核驱动模块（`saibcm-modules`） | 通用 |
 
-以 `sai-xgs.mk` 為例，定義 Broadcom SAI 套件的方式如下（節錄實際內容）：
+以 `sai-xgs.mk` 为例，定义 Broadcom SAI 套件的方式如下（节录实际内容）：
 
 ```makefile
 LIBSAIBCM_XGS_VERSION = 15.2.0.0.0.0.3.1
@@ -156,20 +156,20 @@ BRCM_XGS_SAI_DEV = libsaibcm-dev_$(LIBSAIBCM_XGS_VERSION)_amd64.deb
 $(eval $(call add_derived_package,$(BRCM_XGS_SAI),$(BRCM_XGS_SAI_DEV)))
 $(BRCM_XGS_SAI_DEV)_URL = "$(LIBSAIBCM_XGS_URL_PREFIX)/$(BRCM_XGS_SAI_DEV)"
 
-# 註冊成線上下載套件
+# 注册成在线下载套件
 SONIC_ONLINE_DEBS += $(BRCM_XGS_SAI)
 ```
 
-重點拆解：
+重点拆解：
 
-- `BUILD_PUBLIC_URL` 預設是官方公開 mirror（`rules/config` 內定義，預設 `https://packages.trafficmanager.net/public`）。
-- `libsaibcm`（runtime）是真正裝進 `syncd` 容器的 SAI 庫。
-- `libsaibcm-dev` 是 build `syncd` 時需要的開發標頭/庫，用 `add_derived_package` 由 runtime 衍生（共用 metadata）。
-- SAI 如何注入 syncd 容器，見 `platform/broadcom/docker-syncd-brcm.mk`：
+- `BUILD_PUBLIC_URL` 缺省是官方公开 mirror（`rules/config` 内定义，缺省 `https://packages.trafficmanager.net/public`）。
+- `libsaibcm`（runtime）是真正装进 `syncd` 容器的 SAI 库。
+- `libsaibcm-dev` 是 build `syncd` 时需要的开发标头/库，用 `add_derived_package` 由 runtime 衍生（共用 metadata）。
+- SAI 如何注入 syncd 容器，见 `platform/broadcom/docker-syncd-brcm.mk`：
 
 ```makefile
 $(DOCKER_SYNCD_BASE)_DEPENDS += $(SYNCD)
-$(DOCKER_SYNCD_BASE)_DEPENDS += $(BRCM_XGS_SAI)   # ← SAI 被加為 syncd 容器相依
+$(DOCKER_SYNCD_BASE)_DEPENDS += $(BRCM_XGS_SAI)   # ← SAI 被加为 syncd 容器相依
 ```
 
 以及 `platform/broadcom/rules.mk`：
@@ -181,55 +181,55 @@ $(SYNCD)_DEPENDS += $(BRCM_XGS_SAI) $(BRCM_XGS_SAI_DEV)
 
 ---
 
-## 5. Broadcom debian 的取得（NDA 議題）
+## 5. Broadcom debian 的取得（NDA 议题）
 
-### 5.1 為什麼需要特別處理
+### 5.1 为什幺需要特别处理
 
-Broadcom 的 SAI/SDK 二進位（`libsaibcm*.deb`）屬於**受 NDA 保護的廠商資產**：
+Broadcom 的 SAI/SDK 二进位（`libsaibcm*.deb`）属于**受 NDA 保护的厂商资产**：
 
-- 公開 mirror 上的版本可能受限、或非你客戶需要的特定版本。
-- 客戶若有自家 SDK patch、或 Broadcom 直接交付的特殊版本，**無法放到公開來源**。
-- 因此實務上常見需求是：**用本機/內部來源的 `.deb` 取代預設的線上下載**。
+- 公开 mirror 上的版本可能受限、或非你客户需要的特定版本。
+- 客户若有自家 SDK patch、或 Broadcom 直接交付的特殊版本，**无法放到公开来源**。
+- 因此实务上常见需求是：**用本机/内部来源的 `.deb` 取代缺省的在线下载**。
 
-> 合規提醒：Broadcom SAI/SDK debian 的散佈受 NDA 約束。請勿將這些 `.deb`、或其 URL/帳密，提交進公開 repository、公開 CI log 或外部可存取的位置。內部傳遞請走公司核可的受控管道。
+> 合规提醒：Broadcom SAI/SDK debian 的散布受 NDA 约束。请勿将这些 `.deb`、或其 URL/帐密，提交进公开 repository、公开 CI log 或外部可访问的位置。内部传递请走公司核可的受控管道。
 
-### 5.2 合法取得管道（擇一）
+### 5.2 合法取得管道（择一）
 
-1. **Broadcom 官方交付**：簽署 NDA 後，由 Broadcom 透過其客戶入口 / 業務窗口提供對應 SAI 版本。
-2. **公司內部 artifact server**：公司在內部 mirror（如 Artifactory / 內部 HTTP server）存放已授權的 `.deb`。
-3. **客戶提供**：客戶基於其與 Broadcom 的 NDA，提供自家二次開發後的 `.deb`。
+1. **Broadcom 官方交付**：签署 NDA 后，由 Broadcom 通过其客户入口 / 业务窗口提供对应 SAI 版本。
+2. **公司内部 artifact server**：公司在内部 mirror（如 Artifactory / 内部 HTTP server）存放已授权的 `.deb`。
+3. **客户提供**：客户基于其与 Broadcom 的 NDA，提供自家二次开发后的 `.deb`。
 
-### 5.3 確認你手上的套件版本
+### 5.3 确认你手上的套件版本
 
-命名規則為 `libsaibcm_<版本>_amd64.deb`。build 要成功，`.mk` 內的 `LIBSAIBCM_*_VERSION` 必須與實際檔名版本一致，否則 `curl` 或複製會找不到檔案。
+命名规则为 `libsaibcm_<版本>_amd64.deb`。build 要成功，`.mk` 内的 `LIBSAIBCM_*_VERSION` 必须与实际文档名版本一致，否则 `curl` 或拷贝会找不到文档。
 
 ---
 
-## 6. 替換 Broadcom debian 來 build 不同 image
+## 6. 替换 Broadcom debian 来 build 不同 image
 
-本章是本文核心。目標：**在不改動官方預設來源的前提下，用你自己的 Broadcom debian build 出 image**。
+本章是本文内核。目标：**在不改动官方缺省来源的前提下，用你自己的 Broadcom debian build 出 image**。
 
-有三種做法，依「侵入程度」由低到高排列。**建議新手從做法 A 開始。**
+有三种做法，依「侵入程度」由低到高排列。**建议新手从做法 A 开始。**
 
-### 做法 A：改走本地複製（`SONIC_COPY_DEBS`）— 推薦
+### 做法 A：改走本地拷贝（`SONIC_COPY_DEBS`）— 推荐
 
-概念：把 SAI 套件從「線上下載」改成「從本機路徑複製」。這正是 `platform/nephos/sai.mk` 既有的官方範例所用的模式（以環境變數切換本地/線上）。
+概念：把 SAI 套件从「在线下载」改成「从本机路径拷贝」。这正是 `platform/nephos/sai.mk` 既有的官方范例所用的模式（以环境变量切换本地/在线）。
 
-**步驟**
+**步骤**
 
-1. 把你取得的 `.deb` 放到專案可存取的本機路徑，例如：
+1. 把你取得的 `.deb` 放到项目可访问的本机路径，例如：
 
    ```
    platform/broadcom/sai-local/libsaibcm_15.2.0.0.0.0.3.1_amd64.deb
    platform/broadcom/sai-local/libsaibcm-dev_15.2.0.0.0.0.3.1_amd64.deb
    ```
 
-2. 修改 `platform/broadcom/sai-xgs.mk`，將 `_URL` 改為 `_PATH`，並把註冊從 `SONIC_ONLINE_DEBS` 改為 `SONIC_COPY_DEBS`：
+2. 修改 `platform/broadcom/sai-xgs.mk`，将 `_URL` 改为 `_PATH`，并把注册从 `SONIC_ONLINE_DEBS` 改为 `SONIC_COPY_DEBS`：
 
    ```makefile
    LIBSAIBCM_XGS_VERSION = 15.2.0.0.0.0.3.1
 
-   # Runtime 套件：改用本地路徑
+   # Runtime 套件：改用本地路径
    BRCM_XGS_SAI = libsaibcm_$(LIBSAIBCM_XGS_VERSION)_amd64.deb
    $(BRCM_XGS_SAI)_PATH = $(PLATFORM_PATH)/sai-local/$(BRCM_XGS_SAI)
 
@@ -238,7 +238,7 @@ Broadcom 的 SAI/SDK 二進位（`libsaibcm*.deb`）屬於**受 NDA 保護的廠
    $(eval $(call add_derived_package,$(BRCM_XGS_SAI),$(BRCM_XGS_SAI_DEV)))
    $(BRCM_XGS_SAI_DEV)_PATH = $(PLATFORM_PATH)/sai-local/$(BRCM_XGS_SAI_DEV)
 
-   # 註冊改為本地複製
+   # 注册改为本地拷贝
    SONIC_COPY_DEBS += $(BRCM_XGS_SAI)
 
    $(BRCM_XGS_SAI_DEV)_DEPENDS += $(BRCM_XGS_SAI)
@@ -247,11 +247,11 @@ Broadcom 的 SAI/SDK 二進位（`libsaibcm*.deb`）屬於**受 NDA 保護的廠
    $(eval $(call add_conflict_package,$(BRCM_XGS_SAI_DEV),$(LIBSAIVS_DEV)))
    ```
 
-   > `$(PLATFORM_PATH)` 在 Broadcom build 時即 `platform/broadcom`。
+   > `$(PLATFORM_PATH)` 在 Broadcom build 时即 `platform/broadcom`。
 
-### 做法 B：用環境變數切換（更乾淨、可多客戶共用）— 建議團隊採用
+### 做法 B：用环境变量切换（更干净、可多客户共用）— 建议团队采用
 
-仿照 `platform/nephos/sai.mk` 的官方寫法，用一個環境變數決定要「本地複製」還是「線上下載」。好處是**不同客戶 build 時不需改碼，只改環境變數**。
+仿照 `platform/nephos/sai.mk` 的官方写法，用一个环境变量决定要「本地拷贝」还是「在线下载」。好处是**不同客户 build 时不需改码，只改环境变量**。
 
 在 `platform/broadcom/sai-xgs.mk` 改成：
 
@@ -260,7 +260,7 @@ LIBSAIBCM_XGS_VERSION = 15.2.0.0.0.0.3.1
 LIBSAIBCM_XGS_BRANCH_NAME = SAI_15.2.0_GA
 LIBSAIBCM_XGS_URL_PREFIX = "$(BUILD_PUBLIC_URL)/sai/sai-broadcom/$(LIBSAIBCM_XGS_BRANCH_NAME)/$(LIBSAIBCM_XGS_VERSION)/xgs"
 
-# 在此指定本地 SAI 存放目錄；留空則走線上下載
+# 在此指定本地 SAI 存放目录；留空则走在线下载
 BRCM_XGS_SAI_LOCAL_PATH ?=
 export BRCM_XGS_SAI_LOCAL_PATH
 
@@ -269,12 +269,12 @@ BRCM_XGS_SAI_DEV = libsaibcm-dev_$(LIBSAIBCM_XGS_VERSION)_amd64.deb
 $(eval $(call add_derived_package,$(BRCM_XGS_SAI),$(BRCM_XGS_SAI_DEV)))
 
 ifneq ($(BRCM_XGS_SAI_LOCAL_PATH), )
-# ── 本地來源 ──
+# ── 本地来源 ──
 $(BRCM_XGS_SAI)_PATH     = $(BRCM_XGS_SAI_LOCAL_PATH)/$(BRCM_XGS_SAI)
 $(BRCM_XGS_SAI_DEV)_PATH = $(BRCM_XGS_SAI_LOCAL_PATH)/$(BRCM_XGS_SAI_DEV)
 SONIC_COPY_DEBS += $(BRCM_XGS_SAI)
 else
-# ── 線上來源（官方預設）──
+# ── 在线来源（官方缺省）──
 $(BRCM_XGS_SAI)_URL     = "$(LIBSAIBCM_XGS_URL_PREFIX)/$(BRCM_XGS_SAI)"
 $(BRCM_XGS_SAI_DEV)_URL = "$(LIBSAIBCM_XGS_URL_PREFIX)/$(BRCM_XGS_SAI_DEV)"
 SONIC_ONLINE_DEBS += $(BRCM_XGS_SAI)
@@ -286,45 +286,45 @@ $(BRCM_XGS_SAI_DEV)_SKIP_VERSION = y
 $(eval $(call add_conflict_package,$(BRCM_XGS_SAI_DEV),$(LIBSAIVS_DEV)))
 ```
 
-build 時：
+build 时：
 
 ```shell
-# 用客戶 A 的本地 SAI
+# 用客户 A 的本地 SAI
 make BRCM_XGS_SAI_LOCAL_PATH=/data/sai/customerA PLATFORM=broadcom target/sonic-broadcom.bin
 
-# 不帶變數 → 走官方線上版本（回到預設行為）
+# 不带变量 → 走官方在线版本（回到缺省行为）
 make PLATFORM=broadcom target/sonic-broadcom.bin
 ```
 
-> 要讓 `make` 把這個變數帶進 build 容器，需確認它被 `export`（上方已 `export`）；若使用 `rules/config.user` 也可持久化設定。
+> 要让 `make` 把这个变量带进 build 容器，需确认它被 `export`（上方已 `export`）；若使用 `rules/config.user` 也可持久化配置。
 
-### 做法 C：改內部 mirror URL（整個團隊統一改來源）
+### 做法 C：改内部 mirror URL（整个团队统一改来源）
 
-若公司有內部 artifact server，最省事的是只改 `BUILD_PUBLIC_URL` 指向內部 mirror，套件結構沿用官方版面：
+若公司有内部 artifact server，最省事的是只改 `BUILD_PUBLIC_URL` 指向内部 mirror，套件结构沿用官方版面：
 
 ```shell
-make BUILD_PUBLIC_URL=https://artifactory.內部網域/sonic-public PLATFORM=broadcom target/sonic-broadcom.bin
+make BUILD_PUBLIC_URL=https://artifactory.内部网域/sonic-public PLATFORM=broadcom target/sonic-broadcom.bin
 ```
 
-前提：內部 mirror 上要有與官方相同的目錄結構與檔名（`sai/sai-broadcom/<branch>/<version>/xgs/libsaibcm_*.deb`）。
+前提：内部 mirror 上要有与官方相同的目录结构与文档名（`sai/sai-broadcom/<branch>/<version>/xgs/libsaibcm_*.deb`）。
 
-### 三種做法比較
+### 三种做法比较
 
-| 做法 | 侵入性 | 適合情境 | 多客戶友善度 |
+| 做法 | 侵入性 | 适合情境 | 多客户友善度 |
 |------|--------|----------|--------------|
-| A 本地複製（硬改） | 中（改 recipe） | 單次、單客戶快速驗證 | 低 |
-| B 環境變數切換 | 低（改一次 recipe，之後只改變數） | **多客戶、CI 常態化** | 高 |
-| C 內部 mirror | 最低（完全不改 recipe） | 全團隊統一內部來源 | 中 |
+| A 本地拷贝（硬改） | 中（改 recipe） | 单次、单客户快速验证 | 低 |
+| B 环境变量切换 | 低（改一次 recipe，之后只改变量） | **多客户、CI 常态化** | 高 |
+| C 内部 mirror | 最低（完全不改 recipe） | 全团队统一内部来源 | 中 |
 
-> 另外請記得 DNX / legacy-TH 客戶：若你的平台用的是 DNX 或 legacy-TH 晶片，相同手法要套到 `sai-dnx.mk` / `sai-legacy-th.mk`，而非只改 `sai-xgs.mk`。
+> 另外请记得 DNX / legacy-TH 客户：若你的平台用的是 DNX 或 legacy-TH 芯片，相同手法要套到 `sai-dnx.mk` / `sai-legacy-th.mk`，而非只改 `sai-xgs.mk`。
 
 ---
 
-## 7. 客戶二次開發 debian 的整合流程
+## 7. 客户二次开发 debian 的集成流程
 
-不同客戶可能對 Broadcom SAI/SDK 做自家二次開發，產出自己的 `.deb`。建議用**做法 B（環境變數切換）**搭配以下管理慣例：
+不同客户可能对 Broadcom SAI/SDK 做自家二次开发，产出自己的 `.deb`。建议用**做法 B（环境变量切换）**搭配以下管理惯例：
 
-### 7.1 目錄與版本管理建議
+### 7.1 目录与版本管理建议
 
 ```
 /data/sai/
@@ -336,18 +336,18 @@ make BUILD_PUBLIC_URL=https://artifactory.內部網域/sonic-public PLATFORM=bro
     libsaibcm-dev_<verB>_amd64.deb
 ```
 
-- **不要**把客戶 `.deb` 提交進 git（NDA + 體積）。改用內部 artifact server 或受控目錄。
-- 每個客戶的 SAI 版本號若不同，需同步調整對應 `.mk` 的 `LIBSAIBCM_*_VERSION`，或讓版本也由環境變數帶入。
+- **不要**把客户 `.deb` 提交进 git（NDA + 体积）。改用内部 artifact server 或受控目录。
+- 每个客户的 SAI 版本号若不同，需同步调整对应 `.mk` 的 `LIBSAIBCM_*_VERSION`，或让版本也由环境变量带入。
 
-### 7.2 版本號也參數化（進階）
+### 7.2 版本号也参数化（高端）
 
-若客戶版本號各異，可把版本也做成變數：
+若客户版本号各异，可把版本也做成变量：
 
 ```makefile
 LIBSAIBCM_XGS_VERSION ?= 15.2.0.0.0.0.3.1
 ```
 
-build 時覆寫：
+build 时覆写：
 
 ```shell
 make LIBSAIBCM_XGS_VERSION=15.2.0.0.0.0.9.9 \
@@ -355,49 +355,49 @@ make LIBSAIBCM_XGS_VERSION=15.2.0.0.0.0.9.9 \
      PLATFORM=broadcom target/sonic-broadcom.bin
 ```
 
-### 7.3 每客戶一份設定檔（最可維護）
+### 7.3 每客户一份配置档（最可维护）
 
-為每個客戶準備一份 `config.user` 片段，避免 build 指令過長、也便於 CI：
+为每个客户准备一份 `config.user` 片段，避免 build 指令过长、也便于 CI：
 
 ```makefile
-# rules/config.user  （此檔被 gitignore，不會進版控）
+# rules/config.user  （此档被 gitignore，不会进版控）
 BRCM_XGS_SAI_LOCAL_PATH = /data/sai/customerA
 LIBSAIBCM_XGS_VERSION = 15.2.0.0.0.0.3.1
 SONIC_CONFIG_BUILD_JOBS = 4
 ```
 
-### 7.4 驗證替換是否生效
+### 7.4 验证替换是否生效
 
-build 後，從產出的 deb 目錄確認版本與來源：
+build 后，从产出的 deb 目录确认版本与来源：
 
 ```shell
 ls -l target/debs/*/libsaibcm*_amd64.deb
-dpkg-deb -I target/debs/<BLDENV>/libsaibcm_<version>_amd64.deb   # 看 metadata 確認是客戶版本
+dpkg-deb -I target/debs/<BLDENV>/libsaibcm_<version>_amd64.deb   # 看 metadata 确认是客户版本
 ```
 
-> 小技巧：客戶二次開發版本建議在套件 changelog / maintainer 欄位加上可辨識字串，方便事後確認「這顆 image 用的是哪個客戶的 SAI」。
+> 小技巧：客户二次开发版本建议在套件 changelog / maintainer 字段加上可辨识字符串，方便事后确认「这颗 image 用的是哪个客户的 SAI」。
 
 ---
 
 ## 8. 完整 build 操作流程
 
-以下是從零到產出 Broadcom image 的正式流程（整合 `README.md` 並補上 Broadcom 替換步驟）。
+以下是从零到产出 Broadcom image 的正式流程（集成 `README.md` 并补上 Broadcom 替换步骤）。
 
-### 8.1 環境準備（一次性）
+### 8.1 环境准备（一次性）
 
-硬體建議：多核心、RAM ≥ 8 GiB（建議更多）、磁碟 ≥ 300G、支援 KVM。OS 建議 Ubuntu 22.04 / 24.04。
+硬件建议：多内核、RAM ≥ 8 GiB（建议更多）、磁盘 ≥ 300G、支持 KVM。OS 建议 Ubuntu 22.04 / 24.04。
 
 ```shell
-# 安裝 pip 與 jinjanator
+# 安装 pip 与 jinjanator
 sudo apt install -y python3-pip
 pip3 install --user jinjanator
 
-# 安裝 Docker，並讓目前使用者免 sudo
+# 安装 Docker，并让目前用户免 sudo
 sudo gpasswd -a ${USER} docker
-# 登出再登入讓群組生效
+# 注销再登录让群组生效
 ```
 
-### 8.2 取得原始碼
+### 8.2 取得原代码
 
 ```shell
 git clone --recurse-submodules https://github.com/sonic-net/sonic-buildimage.git
@@ -405,121 +405,121 @@ cd sonic-buildimage
 # 若需特定分支：git checkout <branch_name>
 ```
 
-### 8.3 設定 Broadcom SAI 來源（本文重點）
+### 8.3 配置 Broadcom SAI 来源（本文重点）
 
-依第 6 章擇一做法。以做法 B 為例，先備妥本地 `.deb`，再透過變數指定（見 8.5）。
+依第 6 章择一做法。以做法 B 为例，先备妥本地 `.deb`，再通过变量指定（见 8.5）。
 
-### 8.4 初始化與設定平台
+### 8.4 初始化与配置平台
 
 ```shell
-sudo modprobe overlay     # 確保 overlay 模組載入
+sudo modprobe overlay     # 确保 overlay 模块加载
 
-make init                 # clone 後或更新 submodule 後執行一次
+make init                 # clone 后或更新 submodule 后运行一次
 make configure PLATFORM=broadcom
 ```
 
 ### 8.5 建置 image
 
 ```shell
-# 官方線上 SAI
+# 官方在线 SAI
 make SONIC_BUILD_JOBS=4 PLATFORM=broadcom target/sonic-broadcom.bin
 
-# 或：使用客戶本地 SAI（做法 B）
+# 或：使用客户本地 SAI（做法 B）
 make SONIC_BUILD_JOBS=4 \
      BRCM_XGS_SAI_LOCAL_PATH=/data/sai/customerA \
      PLATFORM=broadcom target/sonic-broadcom.bin
 ```
 
-記憶體對照（來自 `README.md`，供排 JOBS 參考）：
+内存对照（来自 `README.md`，供排 JOBS 参考）：
 
-| JOBS | 約需 RAM |
+| JOBS | 约需 RAM |
 |------|----------|
 | 1 | ~10 GB |
 | 4 | ~28 GB |
 | 8 | ~52 GB |
 
-加速/省記憶體選項：
+加速/省内存选项：
 
 ```shell
-# 跳過測試加速迭代
+# 跳过测试加速迭代
 make SONIC_BUILD_JOBS=4 BUILD_SKIP_TEST=y PLATFORM=broadcom target/sonic-broadcom.bin
 
-# 限制 build 容器記憶體（寫進 rules/config.user）
+# 限制 build 容器内存（写进 rules/config.user）
 # SONIC_BUILD_MEMORY = 24g
 ```
 
-### 8.6 產物
+### 8.6 产物
 
-- 最終安裝檔：`target/sonic-broadcom.bin`（ONIE installer）。
-- 中間 deb：`target/debs/<BLDENV>/`，可在此確認 SAI 版本是否為預期。
+- 最终安装档：`target/sonic-broadcom.bin`（ONIE installer）。
+- 中间 deb：`target/debs/<BLDENV>/`，可在此确认 SAI 版本是否为预期。
 
 ---
 
-## 9. 常見問題排查
+## 9. 常见问题排查
 
-| 症狀 | 可能原因 | 處置 |
+| 症状 | 可能原因 | 处置 |
 |------|----------|------|
-| `curl: ... 404` 抓 `libsaibcm` 失敗 | `LIBSAIBCM_*_VERSION` 與來源實際檔名不符 | 對齊版本字串；或改走本地複製（做法 A/B） |
-| 改成 `SONIC_COPY_DEBS` 後說找不到檔 | `_PATH` 路徑錯、或檔案不在 build 容器可見範圍 | 確認路徑相對 repo 根目錄、檔案確實存在 |
-| 版本沒變但 image 還是舊 SAI | DPKG cache 命中舊套件 | 清掉該 deb target 後重 build，或確認 `SKIP_VERSION` 設定 |
-| 環境變數沒帶進 build 容器 | 變數未 `export` | 在 `.mk` 加 `export`，或寫進 `rules/config.user` |
-| DNX/legacy 平台改了 xgs 卻沒效果 | 改錯檔案 | DNX 改 `sai-dnx.mk`、legacy 改 `sai-legacy-th.mk` |
-| 不確定最終用的是哪顆 SAI | 無法辨識來源 | `dpkg-deb -I` 看 metadata；建議替換版加辨識字串 |
+| `curl: ... 404` 抓 `libsaibcm` 失败 | `LIBSAIBCM_*_VERSION` 与来源实际文档名不符 | 对齐版本字符串；或改走本地拷贝（做法 A/B） |
+| 改成 `SONIC_COPY_DEBS` 后说找不到档 | `_PATH` 路径错、或文档不在 build 容器可见范围 | 确认路径相对 repo 根目录、文档确实存在 |
+| 版本没变但 image 还是旧 SAI | DPKG cache 命中旧套件 | 清掉该 deb target 后重 build，或确认 `SKIP_VERSION` 配置 |
+| 环境变量没带进 build 容器 | 变量未 `export` | 在 `.mk` 加 `export`，或写进 `rules/config.user` |
+| DNX/legacy 平台改了 xgs 却没效果 | 改错文档 | DNX 改 `sai-dnx.mk`、legacy 改 `sai-legacy-th.mk` |
+| 不确定最终用的是哪颗 SAI | 无法辨识来源 | `dpkg-deb -I` 看 metadata；建议替换版加辨识字符串 |
 
 清除特定套件重建（示意）：
 
 ```shell
-# 以 target group 的 clean 目標清掉，再重新 build
+# 以 target group 的 clean 目标清掉，再重新 build
 make target/debs/<BLDENV>/libsaibcm_<version>_amd64.deb-clean
 make SONIC_BUILD_JOBS=4 PLATFORM=broadcom target/sonic-broadcom.bin
 ```
 
 ---
 
-## 10. 新進人員學習路徑
+## 10. 新进人员学习路径
 
-建議依序完成，每一步都有可驗收的產出：
+建议依序完成，每一步都有可验收的产出：
 
-1. **讀懂架構（約 0.5 天）**
-   - 讀本文第 2、3 章。
-   - 驗收：能畫出「swss → syncd → SAI → ASIC」的資料流，並說明 SAI 的作用。
+1. **读懂架构（约 0.5 天）**
+   - 读本文第 2、3 章。
+   - 验收：能画出「swss → syncd → SAI → ASIC」的数据流，并说明 SAI 的作用。
 
-2. **跑通官方 build（約 1 天，含編譯等待）**
-   - 依第 8 章用官方線上 SAI build 出 `target/sonic-broadcom.bin`。
-   - 驗收：成功產出 `.bin`，並在 `target/debs/` 找到 `libsaibcm`。
+2. **跑通官方 build（约 1 天，含编译等待）**
+   - 依第 8 章用官方在线 SAI build 出 `target/sonic-broadcom.bin`。
+   - 验收：成功产出 `.bin`，并在 `target/debs/` 找到 `libsaibcm`。
 
-3. **做一次本地 SAI 替換（約 0.5 天）**
-   - 用做法 A 把 SAI 改成本地複製（可先用官方抓下來的同一顆 deb 當作練習素材）。
-   - 驗收：build 日誌顯示 copy 而非 curl，image 內 SAI 版本正確。
+3. **做一次本地 SAI 替换（约 0.5 天）**
+   - 用做法 A 把 SAI 改成本地拷贝（可先用官方抓下来的同一颗 deb 当作练习素材）。
+   - 验收：build 日志显示 copy 而非 curl，image 内 SAI 版本正确。
 
-4. **理解多客戶流程（約 0.5 天）**
-   - 用做法 B 的環境變數切換，模擬兩個客戶來源。
-   - 驗收：同一份程式碼，靠不同變數 build 出不同 SAI 的 image。
+4. **理解多客户流程（约 0.5 天）**
+   - 用做法 B 的环境变量切换，仿真两个客户来源。
+   - 验收：同一份代码，靠不同变量 build 出不同 SAI 的 image。
 
-5. **熟悉排查（持續）**
-   - 刻意製造版本不符、路徑錯誤，照第 9 章排除。
+5. **熟悉排查（持续）**
+   - 刻意制造版本不符、路径错误，照第 9 章排除。
 
-> 完成 1～4 即具備獨立處理「Broadcom image build + 客戶 SAI 替換」的能力。
+> 完成 1～4 即具备独立处理「Broadcom image build + 客户 SAI 替换」的能力。
 
 ---
 
-## 附錄 A：關鍵檔案速查
+## 附录 A：关键文档速查
 
-| 路徑 | 作用 |
+| 路径 | 作用 |
 |------|------|
 | `platform/broadcom/rules.mk` | Broadcom 平台 recipe 入口，include 各 SAI/docker recipe |
-| `platform/broadcom/sai-xgs.mk` | XGS SAI（`libsaibcm`）定義 — **替換主要改這裡** |
-| `platform/broadcom/sai-dnx.mk` | DNX SAI 定義 |
-| `platform/broadcom/sai-legacy-th.mk` | Legacy-TH SAI 定義 |
-| `platform/broadcom/docker-syncd-brcm.mk` | 將 SAI 注入 `syncd` 容器 |
-| `platform/nephos/sai.mk` | 官方「本地/線上切換」寫法範本（做法 B 參考） |
-| `slave.mk` | build 後端，定義 `SONIC_ONLINE_DEBS` / `SONIC_COPY_DEBS` 等規則 |
-| `rules/config` | build 全域設定（含 `BUILD_PUBLIC_URL` 預設值） |
-| `rules/config.user` | 個人/客戶持久化設定（gitignore，不進版控） |
-| `README.buildsystem.md` | build 系統權威說明 |
+| `platform/broadcom/sai-xgs.mk` | XGS SAI（`libsaibcm`）定义 — **替换主要改这里** |
+| `platform/broadcom/sai-dnx.mk` | DNX SAI 定义 |
+| `platform/broadcom/sai-legacy-th.mk` | Legacy-TH SAI 定义 |
+| `platform/broadcom/docker-syncd-brcm.mk` | 将 SAI 注入 `syncd` 容器 |
+| `platform/nephos/sai.mk` | 官方「本地/在线切换」写法范本（做法 B 参考） |
+| `slave.mk` | build 后端，定义 `SONIC_ONLINE_DEBS` / `SONIC_COPY_DEBS` 等规则 |
+| `rules/config` | build 全域配置（含 `BUILD_PUBLIC_URL` 默认值） |
+| `rules/config.user` | 个人/客户持久化配置（gitignore，不进版控） |
+| `README.buildsystem.md` | build 系统权威说明 |
 
-## 附錄 B：合規備忘
+## 附录 B：合规备忘
 
-- Broadcom SAI/SDK debian 受 NDA 保護，禁止提交進公開 repo、公開 CI log 或外部可存取位置。
-- 客戶二次開發的 `.deb` 視同機密資產，僅於公司核可的受控管道傳遞與存放。
-- 內部 mirror / artifact server 的帳密不得寫進版控檔案；使用 CI secret 或環境變數管理。
+- Broadcom SAI/SDK debian 受 NDA 保护，禁止提交进公开 repo、公开 CI log 或外部可访问位置。
+- 客户二次开发的 `.deb` 视同机密资产，仅于公司核可的受控管道传递与存放。
+- 内部 mirror / artifact server 的帐密不得写进版控文档；使用 CI secret 或环境变量管理。
